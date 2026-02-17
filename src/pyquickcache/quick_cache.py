@@ -6,8 +6,7 @@ from dataclasses import dataclass
 import atexit
 
 from .base_cache import BaseCache
-from .registry.registry import create_eviction_policy, create_serializer
-from .quick_cache_config import QuickCacheConfig
+from .registry.registry import create_eviction_policy, create_serializer, create_cache_backend
 from .storage import FileManager, FileSystemStorage
 from .metrics import CacheMetrics, NoOpMetrics
 from .exceptions import (
@@ -101,20 +100,27 @@ class QuickCache(BaseCache):
         Initialize a new QuickCache instance.
 
         Args:
-            config (Optional[QuickCacheConfig]): Cache configuration object.
-                If not provided, default configuration values are used.
+            config (Optional[QuickCacheConfig]): Cache-level configuration.
+            backend (str): Name of the backend to use.
+            backend_config (Optional[Any]): Backend-specific configuration object.
 
         Raises:
-            ValueError: If the configured eviction policy or serializer is unknown.
+            ValueError: If the backend, eviction policy, or serializer is unknown.
         """
 
-        # Load default config if no config is provided
+        # Cache-level configuration
         self.config = config or QuickCacheConfig()
+
+        # Create backend
+        self.backend = create_cache_backend(
+            name=backend,
+            config=backend_config,
+        )
 
         self.eviction_policy = create_eviction_policy(self.config.eviction_policy)
         self.serializer = create_serializer(self.config.serializer)
 
-        self.metrics = CacheMetrics() if self.config.enable_metrics else NoOpMetrics()
+        self.metrics = CacheMetrics() if self.config.enable_metrics else NoOpMetrics()  
         self.metrics_serializer = create_serializer(self.config.metrics_serializer)
 
         self.cache_file_manager = FileManager(
@@ -127,8 +133,7 @@ class QuickCache(BaseCache):
             default_filename=self.config.metrics_filename,
         )
 
-        # In memory Cache
-        self.cache: OrderedDict[str, CacheEntry] = OrderedDict()
+        # Capacity Control
         self.max_cache_size = self.config.max_size
 
         # The stop signal
